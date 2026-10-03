@@ -247,6 +247,23 @@ function skin_is_valid_skin_data(packed)
     return found >= 6
 end
 
+-- Preset swatches above are authored as ordinary sRGB values (the same numbers
+-- you'd read off a color picker). CustomizerData color fields are true
+-- FLinearColor properties, so writing sRGB numbers straight into them makes
+-- the engine re-apply gamma on top of already-gamma colors, which is why
+-- painted skins came out washed-out/pale. Convert sRGB -> linear here, once,
+-- right before packing, so every consumer of the packed string gets correct
+-- linear values.
+function skin_srgb_to_linear(c)
+    c = tonumber(c) or 0
+    if c <= 0 then return 0 end
+    if c >= 1 then return 1 end
+    if c <= 0.04045 then
+        return c / 12.92
+    end
+    return ((c + 0.055) / 1.055) ^ 2.4
+end
+
 function skin_pack_preset(preset)
     local preset_rows = SKIN_PRESETS[preset]
     if preset_rows == nil then return "" end
@@ -254,7 +271,10 @@ function skin_pack_preset(preset)
     for _, field in ipairs(SKIN_COLOR_FIELDS) do
         local c = preset_rows[field]
         if type(c) == "table" then
-            parts[#parts + 1] = field .. "=" .. string.format("%.5f,%.5f,%.5f,1.00000", c[1], c[2], c[3])
+            local r = skin_srgb_to_linear(c[1])
+            local g = skin_srgb_to_linear(c[2])
+            local b = skin_srgb_to_linear(c[3])
+            parts[#parts + 1] = field .. "=" .. string.format("%.5f,%.5f,%.5f,1.00000", r, g, b)
         end
     end
     return table.concat(parts, "|")

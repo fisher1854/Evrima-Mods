@@ -659,6 +659,7 @@ function commitPendingSnap(steam, ctrl)
     local snap = pendingSnaps[steam]
     pendingSnaps[steam] = nil
     armedStores[steam] = nil
+    unregisterPlayerJob(steam, "store", steam)
     if snap == nil or snap.classPath == nil or snap.classPath == "" then
         local msg = "recap: vault NOT saved — nothing captured. Store and safelog again."
         writeRecap(steam, "failed", snap, "safelog finished but nothing was captured")

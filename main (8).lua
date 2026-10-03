@@ -176,11 +176,6 @@ end
 
 function countPlayerJobsByKind(steam, kind)
     local jobs = getPlayerJobs(steam, kind)
-    if type(jobs) == "table" and #jobs == nil then
-        local n = 0
-        for _ in pairs(jobs) do n = n + 1 end
-        return n
-    end
     return #jobs
 end
 
@@ -228,16 +223,8 @@ function registerPlayerJob(steam, kind, job)
     if steam == "" then return end
     PLAYER_JOBS[steam] = PLAYER_JOBS[steam] or {}
     PLAYER_JOBS[steam][kind] = PLAYER_JOBS[steam][kind] or {}
-    if type(PLAYER_JOBS[steam][kind]) == "table" then
-        if #PLAYER_JOBS[steam][kind] == nil then
-            -- Dict-like storage for teleports (keyed by id)
-            local id = job.id or job.steam or tostring(os.time())
-            PLAYER_JOBS[steam][kind][id] = job
-        else
-            -- Array-like storage for queues
-            PLAYER_JOBS[steam][kind][#PLAYER_JOBS[steam][kind] + 1] = job
-        end
-    end
+    -- Array-like storage for queues; unregisterPlayerJob matches by job.steam/job.id.
+    PLAYER_JOBS[steam][kind][#PLAYER_JOBS[steam][kind] + 1] = job
 end
 
 function unregisterPlayerJob(steam, kind, identifier)
@@ -245,22 +232,15 @@ function unregisterPlayerJob(steam, kind, identifier)
     if steam == "" then return end
     local jobs = (PLAYER_JOBS[steam] or {})[kind]
     if jobs == nil then return end
-    
-    if type(jobs) == "table" then
-        if #jobs == nil then
-            -- Dict-like: delete by id
-            jobs[identifier] = nil
-        else
-            -- Array-like: delete by steam from job.steam
-            local keep = {}
-            for _, job in ipairs(jobs) do
-                if job.steam ~= identifier and job.id ~= identifier then
-                    keep[#keep + 1] = job
-                end
-            end
-            PLAYER_JOBS[steam][kind] = keep
+
+    -- Array-like: delete by steam from job.steam, or by job.id
+    local keep = {}
+    for _, job in ipairs(jobs) do
+        if job.steam ~= identifier and job.id ~= identifier then
+            keep[#keep + 1] = job
         end
     end
+    PLAYER_JOBS[steam][kind] = keep
 end
 
 function clearPlayerJobs(steam)
@@ -697,6 +677,7 @@ function cancelStoreArm(steam, reason)
     pendingSnaps[steam] = nil
     pendingSlays[steam] = nil
     armedStores[steam] = nil
+    unregisterPlayerJob(steam, "store", steam)
     log("store unarmed " .. steam .. " " .. tostring(reason))
     return true, reason or "store cancelled"
 end
@@ -1605,6 +1586,7 @@ function onCancelSafeLogout(selfParam)
     pendingSnaps[steam] = nil
     pendingSlays[steam] = nil
     armedStores[steam] = nil
+    unregisterPlayerJob(steam, "store", steam)
     writeRecap(steam, "cancelled", snap, "in-game safelog was cancelled")
     notifyCtrl(ctrl, "recap: store cancelled — safelog was cancelled")
     queueNotify(steam, "recap: store cancelled — safelog was cancelled")
