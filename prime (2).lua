@@ -108,6 +108,7 @@ function readPrimeProgress(pe)
     for slot, spec in pairs(PRIME_PROGRESS_FIELDS) do
         local n = tryNumber(pe, spec.fields)
         if n ~= nil then
+            n = math.floor(n)
             if n < 0 then n = 0 end
             if n > spec.need then n = spec.need end
             progress[slot] = n
@@ -530,6 +531,12 @@ function handleChat(steam, message, ctrl)
         log(tostring(ok) .. " " .. tostring(result))
     elseif cmd == "!redeem" or cmd:find("^!redeem") then
         recentChat[key] = now
+        for _, r in ipairs(pendingRedeems) do
+            if r.steam == steam and r.kind == "stored" then
+                tell("redeem already queued")
+                return
+            end
+        end
         pendingRedeems[#pendingRedeems + 1] = { steam = steam, at = os.time() + 3, kind = "stored" }
         tell("redeem in 3s — stay spawned as the vault species juvenile")
         log("queued redeem " .. steam)

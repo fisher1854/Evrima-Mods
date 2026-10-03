@@ -656,6 +656,14 @@ function armStore(steam)
         return false, "not spawned — pick a dino first"
     end
     
+    -- Enforce the store arm timeout; a stale arm otherwise blocks !store forever.
+    local armedAt = armedStores[steam]
+    if armedAt ~= nil and pendingSnaps[steam] == nil and pendingSlays[steam] == nil
+        and (os.time() - armedAt) >= JOB_LIMITS.store.timeout then
+        armedStores[steam] = nil
+        unregisterPlayerJob(steam, "store", steam)
+    end
+
     local ok, why = canQueueJob(steam, "store")
     if not ok then
         return false, why
@@ -914,7 +922,8 @@ end
      local ok = false
      pcall(function()
          pawn:SetHealth(0)
-     end) -- <--- THIS WAS MISSING AND WAS CRASHING LINE 941
+         ok = true
+     end)
 
      log("slay attempted before native safelog")
      return ok
@@ -1602,19 +1611,24 @@ function onGameLogout(selfParam, exitingParam)
     if skinMarkGameLogout then
         skinMarkGameLogout(steam)
     end
+    -- Drop queued pawn jobs (teleports, stat holds, grows) so they cannot be
+    -- applied to this player's next pawn after relog.
+    clearSteamPawnJobs(steam)
     if pendingSlays[steam] ~= nil then
         finishStoreBySlay(steam, ctrl)
-        return
-    end
-    if pendingSnaps[steam] ~= nil then
+    elseif pendingSnaps[steam] ~= nil then
         commitPendingSnap(steam, ctrl)
-        return
-    end
-    if armedStores[steam] ~= nil then
+    elseif armedStores[steam] ~= nil then
         armedStores[steam] = nil
         writeRecap(steam, "armed_lost", nil, "left the game while store was armed, before safelog finished")
         notifyCtrl(ctrl, "recap: store armed but not saved — you left before safelog finished")
         queueNotify(steam, "recap: store armed but not saved")
+    end
+    -- A failed commit keeps pendingSnaps for retry; otherwise nothing is left to
+    -- finish, so release the arm and job lock.
+    if pendingSnaps[steam] == nil then
+        armedStores[steam] = nil
+        pendingSlays[steam] = nil
     end
     -- Clear all pending jobs for this player
     clearPlayerJobs(steam)
@@ -1631,6 +1645,8 @@ function tryHook(path, fn)
 end
 
 function registerLogoutHooks()
+    if LOGOUT_HOOKS_REGISTERED then return end
+    LOGOUT_HOOKS_REGISTERED = true
     local prepare = {
         "/Script/TheIsle.TIPlayerController:PrepareSafeLogout",
         "/Script/TheIsle.TIPlayerController:ServerPrepareSafeLogout",
@@ -1655,8 +1671,10 @@ function registerLogoutHooks()
     if skinOnPlayerPawnDeath then
         NotifyOnNewObject("/Script/TheIsle.TISurvivalCharacter", function(pawn)
             -- Hooks into the standard Unreal engine level 'Destroyed' event on the pawn itself
-            pawn:RegisterHook("ReceiveDestroyed", function(self)
-                skinOnPlayerPawnDeath(self)
+            pcall(function()
+                pawn:RegisterHook("ReceiveDestroyed", function(self)
+                    skinOnPlayerPawnDeath(self)
+                end)
             end)
         end)
     end
@@ -1705,7 +1723,13 @@ function handleCmdLine(line)
         queueNotify(steam, msg)
         log("selfkill " .. tostring(ok) .. " " .. steam .. " " .. tostring(msg))
     elseif verb == "redeem" then
-        pendingRedeems[#pendingRedeems + 1] = { steam = steam, at = os.time() + 3, kind = "stored", slot = extra }
+        local dup = false
+        for _, r in ipairs(pendingRedeems) do
+            if r.steam == steam and r.kind == "stored" and (r.slot or "") == extra then dup = true end
+        end
+        if not dup then
+            pendingRedeems[#pendingRedeems + 1] = { steam = steam, at = os.time() + 3, kind = "stored", slot = extra }
+        end
         queueNotify(steam, "redeem in 3s — stay spawned as that juvenile")
     elseif verb == "storeinfo" then
         handleChat(steam, "!storeinfo")
@@ -1791,11 +1815,19 @@ function handleInboxLine(line)
         ok, msg = armStore(steam)
     elseif verb == "redeem" then
         local slot = jsonReadString(line, "slot") or ""
-        pendingRedeems[#pendingRedeems + 1] = {
-            steam = steam, at = os.time() + 3, kind = "stored", slot = slot, id = id, verb = verb, tries = 0,
-        }
-        savePendingRedeems()
-        ok, msg = true, "queued redeem in 3s"
+        local dup = false
+        for _, r in ipairs(pendingRedeems) do
+            if r.steam == steam and r.kind == "stored" and (r.slot or "") == slot then dup = true end
+        end
+        if dup then
+            ok, msg = false, "a redeem is already queued for that slot"
+        else
+            pendingRedeems[#pendingRedeems + 1] = {
+                steam = steam, at = os.time() + 3, kind = "stored", slot = slot, id = id, verb = verb, tries = 0,
+            }
+            savePendingRedeems()
+            ok, msg = true, "queued redeem in 3s"
+        end
     elseif verb == "apply" or verb == "grow" then
         ok, msg = false, "grow is retired — buy a dino in Discord then redeem"
     elseif verb == "census" then
@@ -1883,10 +1915,18 @@ function drainDeferred()
         for _, r in ipairs(pendingRedeems) do
             if now >= r.at then
                 local ok, msg
-                if r.kind == "token" then
-                    ok, msg = applyGrowth(r.steam, r.species, r.growth)
+                -- An error must not escape: pendingRedeems would never be pruned and
+                -- the redeem (incl. position restore) would re-run every second.
+                local pok, a, b = pcall(function()
+                    if r.kind == "token" then
+                        return applyGrowth(r.steam, r.species, r.growth)
+                    end
+                    return redeemStored(r.steam, r.slot)
+                end)
+                if pok then
+                    ok, msg = a, b
                 else
-                    ok, msg = redeemStored(r.steam, r.slot)
+                    ok, msg = false, "redeem error: " .. tostring(a)
                 end
                 if not ok and redeemStillWaiting(msg) and (r.tries or 0) < 45 then
                     r.tries = (r.tries or 0) + 1

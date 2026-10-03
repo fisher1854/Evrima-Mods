@@ -25,7 +25,7 @@ local OVERLAY = {
     maxAiObjects = 128,
     configIntervalSeconds = 15,
     discoveryEnabled = false,
-    discoveryMaxProbes = 16,
+    discoveryMaxProbes = 13, -- must equal #DISCOVERY_PROBES
     discoveryProbesPerTick = 1,
     discoveryCompleted = false,
     nextSnapshotAt = 0,
@@ -299,7 +299,8 @@ local function overlayAiRemember(pawn)
 end
 
 local function overlayAiQueue(obj)
-    if obj == nil then return end
+    -- Hooks stay installed after telemetry is disabled; stop buffering then.
+    if obj == nil or OVERLAY.enabled ~= true then return end
     local pending = OVERLAY.aiPending
     if #pending >= 512 then return end
     pending[#pending + 1] = obj

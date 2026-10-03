@@ -556,7 +556,7 @@ end
 
 aiEnsureDibbleControllerMapping()
 
-function aiClampTargets(teno, dibble, gali, ceiling)
+function aiClampTargets(teno, dibble, galli, ceiling)
     teno = 0
     local onlinePlayers = 0
 
@@ -590,7 +590,7 @@ function aiClampTargets(teno, dibble, gali, ceiling)
     if scaledGalli < minHerdAICap then scaledGalli = minHerdAICap end
 
     dibble = math.max(2, math.floor(tonumber(dibble) or scaledDibble))
-    galli = math.max(2, math.floor(tonumber(gali) or scaledGalli)) 
+    galli = math.max(2, math.floor(tonumber(galli) or scaledGalli))
     ceiling = math.max(0, math.floor(tonumber(ceiling) or 40))
     
     if ceiling > 0 and dibble > ceiling then dibble = ceiling end 
@@ -1808,7 +1808,8 @@ function aiTryBroadcastCall(pawn, why)
     if vocal == nil then return false end
     local mag = tonumber(AI_HERD.callMagnitude) or 1.0
     local ok = false
-    local gm = findGameMode and findGameMode() or nil
+    local gm = nil
+    if type(findGameMode) == "function" then pcall(function() gm = findGameMode() end) end
     if gm ~= nil then pcall(function() gm:ServerCallVocalSpawn(pawn, mag, vocal); ok = true end) end
     if not ok then pcall(function() pawn:SpawnVocals(mag, vocal); ok = true end) end
     if ok then log(string.format("ai call Broadcast (spawn mode=%s)", aiCallsMode())) end

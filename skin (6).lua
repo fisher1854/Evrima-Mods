@@ -475,9 +475,16 @@ function skin_handle_chat(steam, message, ctrl)
 
     local channel, swatch = lower:match("^(%S+)%s+(%S+)")
     if channel ~= nil and SKIN_CHANNEL_ALIAS[channel] ~= nil and SKIN_PRESETS[swatch] ~= nil then
-        -- simplified per-channel apply path
         local saved = skin_load_state(steam)
         local packed = saved and saved.skinData or skin_pack_preset(swatch)
+        -- Swap only the requested channel with the swatch colour.
+        local field = SKIN_CHANNEL_ALIAS[channel]
+        local entry = skin_pack_preset(swatch):match("|(" .. field .. "=[^|]+)")
+        if entry ~= nil then
+            local found = false
+            packed = packed:gsub("|" .. field .. "=[^|]+", function() found = true; return "|" .. entry end)
+            if not found then packed = packed .. "|" .. entry end
+        end
         local ok, msg = skin_apply_live_packed(steam, swatch, packed, true)
         notifyCtrl(ctrl, tostring(msg))
         return
@@ -550,6 +557,11 @@ function poll_skin_restore()
         end
 
         st.seen_addr = addr
+
+        -- Already restored onto this body; do not re-apply/ForceNetUpdate every poll.
+        if st.lifecycle == "live" and st.last_addr == addr and st.pending_restore ~= true then
+            return
+        end
 
         local saved = skin_load_state(steam)
         if saved == nil then

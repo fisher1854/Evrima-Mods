@@ -79,6 +79,10 @@ PRIMEVAL_GROWTH_CAPS = {
 -- Keep the generated species tables above unchanged.
 -- ============================================================
 
+-- speciesKey() yields "allo"/"galli"; the generated caps use the long names.
+PRIMEVAL_GROWTH_CAPS["allo"] = PRIMEVAL_GROWTH_CAPS["allo"] or PRIMEVAL_GROWTH_CAPS["allosaurus"]
+PRIMEVAL_GROWTH_CAPS["galli"] = PRIMEVAL_GROWTH_CAPS["galli"] or PRIMEVAL_GROWTH_CAPS["gallimimus"]
+
 PRIMEVAL_SPECIES_CACHE = PRIMEVAL_SPECIES_CACHE or {}
 PRIMEVAL_CAP_CACHE = PRIMEVAL_CAP_CACHE or {}
 
@@ -109,6 +113,7 @@ local function primevalCleanSpeciesText(value)
     end
 
     text = text:gsub("\\", "/")
+    text = text:gsub("_[Cc]$", "")
     text = text:gsub("%s+", "")
     text = text:gsub("^.*/", "")
     text = text:gsub("^Class%s+", "")
@@ -143,6 +148,7 @@ local function primevalSpeciesFromClassPath(raw)
         { "dryosaurus", "Dryosaurus" },
         { "gallimimus", "Galli" },
         { "pachycephalosaurus", "Pachycephalosaurus" },
+        { "troodon", "Troodon" },
         { "tenontosaurus", "Tenontosaurus" },
         { "dilophosaurus", "Dilophosaurus" },
         { "omniraptor", "Omniraptor" },

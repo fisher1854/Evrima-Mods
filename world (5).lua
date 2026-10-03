@@ -1632,7 +1632,7 @@ end
 
 function locClose(nowLoc, x, y, z)
     if nowLoc == nil or nowLoc.x == nil then return false end
-    return distSq(nowLoc, { x = x, y = y, z = z }) < (4000 * 4000)
+    return distSq(nowLoc, { x = x, y = y, z = z }) < (500 * 500)
 end
 
 function teleportPawn(pawn, snap, ctrl)
@@ -1646,26 +1646,35 @@ function teleportPawn(pawn, snap, ctrl)
     local dest = makeVec(x, y, z, pawn)
     local rot = makeRot(snap, pawn)
     local hit = {}
-    if dest ~= nil then
-        pcall(function() pawn.RootComponent:K2_SetWorldLocation(dest, false, hit, true) end)
-        pcall(function() pawn.RootComponent:K2_SetWorldLocationAndRotation(dest, rot, false, hit, true) end)
-        pcall(function() pawn:K2_SetActorLocationAndRotation(dest, rot, false, hit, true) end)
-        pcall(function() pawn:K2_SetActorLocation(dest, false, hit, true) end)
-        pcall(function() pawn:K2_TeleportTo(dest, rot) end)
-        pcall(function() pawn:SetActorLocation(dest, false) end)
-        pcall(function() pawn:TeleportTo(dest, rot, false, true) end)
+    -- Try one setter at a time and stop once the pawn is at dest; firing every
+    -- setter back to back re-snaps/re-replicates the actor (rubber banding).
+    local function atDest()
+        local cur = readLocation(pawn)
+        return cur ~= nil and distSq(cur, { x = x, y = y, z = z }) < (500 * 500)
     end
-    if rot ~= nil then
-        pcall(function() pawn:K2_SetActorRotation(rot, false) end)
+    if dest ~= nil then
+        local setters = {
+            function() pawn:K2_SetActorLocationAndRotation(dest, rot, false, hit, true) end,
+            function() pawn:K2_SetActorLocation(dest, false, hit, true) end,
+            function() pawn:K2_TeleportTo(dest, rot) end,
+            function() pawn.RootComponent:K2_SetWorldLocationAndRotation(dest, rot, false, hit, true) end,
+            function() pawn.RootComponent:K2_SetWorldLocation(dest, false, hit, true) end,
+            function() pawn:SetActorLocation(dest, false) end,
+            function() pawn:TeleportTo(dest, rot, false, true) end,
+        }
+        for _, fn in ipairs(setters) do
+            pcall(fn)
+            if atDest() then break end
+        end
     end
     if ctrl ~= nil then
         if dest ~= nil then
-            pcall(function() ctrl:ClientSetLocation(dest, rot) end)
-            pcall(function() ctrl:ClientSetLocation(dest) end)
+            if not pcall(function() ctrl:ClientSetLocation(dest, rot) end) then
+                pcall(function() ctrl:ClientSetLocation(dest) end)
+            end
         end
         if rot ~= nil then
             pcall(function() ctrl:SetControlRotation(rot) end)
-            pcall(function() ctrl:ClientSetRotation(rot) end)
         end
     end
     local nowLoc = readLocation(pawn)
